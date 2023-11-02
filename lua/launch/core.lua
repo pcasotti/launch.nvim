@@ -32,7 +32,7 @@ local messages = {
 ---@param config LaunchConfig a run configuration object
 ---@return LaunchConfig?
 ---@nodiscard
-local function check_and_substitute_vars(type, config)
+local function check_and_substitute_vars(type, config, cb)
   if not config then
     vim.api.nvim_command 'redraw'
     util.notify('I', messages[type].no_selection)
@@ -46,10 +46,12 @@ local function check_and_substitute_vars(type, config)
   local sub_config = vim.deepcopy(config)
   sub_config.args = sub_config.args or {}
   table.insert(sub_config.args, 1, sub_config[target])
-  if not user.substitute_variables(sub_config.args) then return end
-  sub_config[target] = table.remove(sub_config.args, 1)
-  if vim.tbl_isempty(sub_config.args) then sub_config.args = nil end
-  return sub_config
+  user.substitute_variables(sub_config.args, function(args)
+    sub_config.args = args
+    sub_config[target] = table.remove(sub_config.args, 1)
+    if vim.tbl_isempty(sub_config.args) then sub_config.args = nil end
+    cb(sub_config)
+  end)
 end
 
 ---get and display a list of valid configurations and execute the one that the user selects
@@ -71,11 +73,12 @@ function M.start(type, show_all_fts, all_configs, run)
     prompt = ('%s%s'):format(messages[type].prompt, (ft and (' : ' .. ft) or '')),
     format_item = function(config) return config.name end,
   }, function(config)
-    local sub_config = check_and_substitute_vars(type, config)
-    if sub_config then
-      vim.api.nvim_command 'redraw' -- clean up any messages before running config
-      run(sub_config)
-    end
+    check_and_substitute_vars(type, config, function(sub_config)
+      if sub_config then
+        vim.api.nvim_command 'redraw' -- clean up any messages before running config
+        run(sub_config)
+      end
+    end)
   end)
 end
 

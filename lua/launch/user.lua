@@ -12,9 +12,8 @@ M.variables = {}
 ---@return string? # replacement string
 ---@nodiscard
 ---*[POSSIBLY THROWS ERROR]*
-local function gsub_callback(name)
+local function gsub_callback(name, cb)
   vim.api.nvim_command 'redraw' -- clean up previous substitution
-  local replacement
   local var = M.variables[name]
   if not var then util.throw_notify('E', 'User variable "%s" not defined', name) end
 
@@ -24,23 +23,63 @@ local function gsub_callback(name)
       vim.api.nvim_command 'redraw'
       util.throw_notify('W', 'Task runner launch cancelled')
     end
-    replacement = choice
+    cb(choice)
   end)
-  return replacement
 end
 
 ---substitution of argument strings with user input
 ---@param args string[] list of argument strings to substitute
 ---@return boolean # whether substitution was successful or not
 ---@nodiscard
-function M.substitute_variables(args)
-  local ok
+function M.substitute_variables(args, cb)
+  local indices = {}
+  local j = 1
   for i = 1, #args do
-    ok, args[i] = pcall(string.gsub, args[i], '{@([_%a][_%w]*)}', gsub_callback)
-    if not ok then return false end
+    if args[i] ~= string.gsub(args[i], '{@([_%a][_%w]*)}', function(name) return name end) then
+      indices[j] = i
+      j = j+1
+    end
   end
 
-  return true
+  local func = function(f, i, size)
+    if i > size then
+      cb(args)
+      return
+    end
+    pcall(string.gsub, args[indices[i]], '{@([_%a][_%w]*)}', function(name)
+      gsub_callback(name, function(choice)
+        args[indices[i]] = choice
+        f(f, i+1, size)
+      end)
+    end)
+  end
+
+  func(func, 1, table.getn(indices))
+
+  -- pcall(string.gsub, args[indices[1]], '{@([_%a][_%w]*)}', function(name)
+  --   gsub_callback(name, function(choice)
+  --     args[indices[1]] = choice
+  --     pcall(string.gsub, args[indices[2]], '{@([_%a][_%w]*)}', function(name)
+  --       gsub_callback(name, function(choice)
+  --         args[indices[2]] = choice
+  --         pcall(string.gsub, args[indices[2]], '{@([_%a][_%w]*)}', function(name)
+  --           gsub_callback(name, function(choice)
+  --             args[indices[2]] = choice
+  --             cb(args)
+  --           end)
+  --         end)
+  --       end)
+  --     end)
+  --   end)
+  -- end)
+
+  -- local ok
+  -- for i = 1, #args do
+  --   ok, args[i] = pcall(string.gsub, args[i], '{@([_%a][_%w]*)}', gsub_callback)
+  --   if not ok then return false end
+  -- end
+  --
+  -- return true
 end
 
 return M
